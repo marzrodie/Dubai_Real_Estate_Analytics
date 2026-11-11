@@ -1,0 +1,9 @@
+# Python packages for the VS Code part of the project (Modules 5 and 6)
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+statsmodels>=0.14
+matplotlib>=3.8
+seaborn>=0.13
+openpyxl>=3.1
+jupyter>=1.0

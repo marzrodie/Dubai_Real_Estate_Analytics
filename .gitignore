@@ -1,0 +1,19 @@
+# Raw data: download from the source instead (see README > Reproduce)
+*.csv
+!data/sample/*.csv
+*.parquet
+*.duckdb
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# OS / editors
+.DS_Store
+.vscode/
+
+# Office temp files
+~$*
