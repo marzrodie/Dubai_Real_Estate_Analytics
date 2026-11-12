@@ -63,6 +63,51 @@ Parquet files plus a transaction log, which add:
 
 ---
 
+## Module 2: Silver
+
+### What silver is for
+Turning *what the source sent* into *what the business means*: proper types, fixed values, standard categories and analysis flags, with every rule written in code.
+**🎤 Interview answer:** *"In silver I apply the cleaning rules that came out of profiling: explicit types, fixes for known bad values, standardised categories and flags. I flag problems rather than delete rows, so totals still reconcile with the raw layer."*
+
+### ANSI mode and `try_cast`
+In ANSI mode (the default on Databricks), `CAST('abc' AS DOUBLE)` fails the job instead of returning NULL. `try_cast` returns NULL for values it can't convert. You then **count the NULLs** to prove nothing was lost.
+**You already know:** Excel's `IFERROR(VALUE(A2), "")`, or PostgreSQL raising `invalid input syntax for type numeric`.
+**🎤 Interview answer:** *"I use try_cast so one malformed value can't stop a 1.8M-row job, then I check NULL counts before and after to prove the casting didn't silently drop data. Price, area and date had zero failures."*
+
+### Nulls in disguise
+A blank can be a real `NULL` or an empty string `""`. `COUNT(col)` and `COALESCE` treat them differently, so check which one you have before cleaning.
+
+### `when` / `otherwise`
+PySpark's `CASE WHEN … THEN … ELSE … END`, and Excel's `IF()`. A `when` without `otherwise` returns NULL when nothing matches, which is how `bedrooms` becomes NULL for offices.
+
+### NULL vs 0
+0 is a real value (a studio has 0 bedrooms). NULL means "not applicable" or "unknown" (an office has no bedroom count). Mixing them up breaks averages and counts.
+
+### Regular expressions
+`^\d+ B/R$` = start, one or more digits, space, `B/R`, end. `rlike` tests a match; `regexp_extract(col, pattern, 1)` pulls out the part in brackets.
+
+### Flag, don't delete (outliers)
+Outliers are marked `is_price_outlier` (below the 0.5th or above the 99.5th percentile of AED per sq ft, *within each property type*), never removed. Each analysis chooses whether to exclude them, and you can show results both ways.
+**🎤 Interview answer:** *"I defined outliers relative to each property type, because land and flats have completely different price levels. That flagged about 1% of sales. I keep them in the table and exclude them in analysis, so the decision is visible and reversible."*
+
+### `percentile_approx`
+An exact percentile sorts every value. The approximate version is far cheaper and accurate to a tiny fraction of a percentile, which is plenty for an outlier threshold.
+
+### Broadcast joins and join fan-out
+`F.broadcast(small_df)` sends a small lookup table to every worker, so the big table never has to be shuffled. **Fan-out** is when the lookup has duplicate keys and the join silently multiplies rows.
+**🎤 Interview answer:** *"I check the row count after every join. If a lookup has duplicate keys, the join multiplies rows and inflates every total downstream."*
+
+### Data quality gate
+A list of yes/no tests that runs automatically and **raises an error** if any fail, so a bad table never reaches a dashboard. Mine tests row count vs bronze, unique IDs, no NULL dates or prices, valid ranges, and flag consistency. Industry tools: dbt tests, Great Expectations, Databricks DLT expectations.
+
+### When not to partition
+Partitioning splits a table into folders (e.g. by year). On a small table (well under 1 TB) it creates many tiny files and makes queries slower. Not partitioning was a deliberate choice here.
+
+### Median vs average for prices
+One AED 50M penthouse moves an average a lot but barely moves the median. Price reporting in real estate uses medians.
+
+---
+
 ## PySpark ↔ pandas ↔ SQL cheat sheet (grows each module)
 
 | Task | PySpark | pandas | SQL |
@@ -77,3 +122,16 @@ Parquet files plus a transaction log, which add:
 | Distinct values | `df.select("a").distinct()` | `df["a"].unique()` | `SELECT DISTINCT a` |
 | Save table | `df.write.saveAsTable("t")` | `df.to_sql("t", con)` | `CREATE TABLE t AS …` |
 | Run SQL from Python | `spark.sql("SELECT …")` | `pd.read_sql("SELECT …", con)` | — |
+| Read a table | `spark.table("cat.schema.t")` | `pd.read_sql_table("t", con)` | `SELECT * FROM t` |
+| Rename | `F.col("a").alias("b")` | `df.rename(columns={"a": "b"})` | `a AS b` |
+| Safe cast | `F.expr("try_cast(a AS DOUBLE)")` | `pd.to_numeric(df.a, errors="coerce")` | `TRY_CAST(a AS DOUBLE)` |
+| Parse date | `F.to_date("a", "yyyy-MM-dd")` | `pd.to_datetime(df.a, format="%Y-%m-%d")` | `TO_DATE(a, 'YYYY-MM-DD')` |
+| If / else | `F.when(cond, x).otherwise(y)` | `np.where(cond, x, y)` | `CASE WHEN … END` |
+| First non-null | `F.coalesce("a", "b")` | `df.a.fillna(df.b)` | `COALESCE(a, b)` |
+| In a list | `F.col("a").isin([...])` | `df.a.isin([...])` | `a IN (...)` |
+| Regex match | `F.col("a").rlike(r"^\d+")` | `df.a.str.match(r"^\d+")` | `a ~ '^\d+'` (Postgres) |
+| Group and aggregate | `df.groupBy("a").agg(F.sum("b"))` | `df.groupby("a").b.sum()` | `GROUP BY a` |
+| Percentile | `F.percentile_approx("b", 0.995)` | `df.b.quantile(0.995)` | `PERCENTILE_CONT(0.995)` |
+| Join | `df.join(other, on="k", how="left")` | `df.merge(other, on="k", how="left")` | `LEFT JOIN … USING (k)` |
+| Filter | `df.filter("a > 5")` | `df[df.a > 5]` | `WHERE a > 5` |
+| Month start | `F.trunc("d", "month")` | `df.d.dt.to_period("M")` | `DATE_TRUNC('month', d)` |

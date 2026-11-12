@@ -57,14 +57,49 @@ This is based on the publisher's attribute sheet, corrected and extended with wh
 | `building_name_en` | Developer's building name | 22.9 | |
 | `nearest_metro_en` / `nearest_mall_en` / `nearest_landmark_en` | Names only, no distance | 33.4 / 34.1 / 23.2 | DQ14 |
 
-## Columns added by this project
+## Bronze additions
 
-| Column | Layer | Definition |
-|--------|-------|------------|
-| `_source_file` | Bronze | CSV file the row came from |
-| `_ingested_at` | Bronze | When the row was loaded into Databricks |
-| `community` | Silver | `master_project_en`, or `area_name_en` when that is blank |
-| `bedrooms` | Silver | 0 for Studio, 1–9 for `n B/R`, null otherwise |
-| `area_sqft`, `price_per_sqft` | Silver | Converted from sq m |
-| `is_core_sale` | Silver | `procedure_name_en` in (`Sell`, `Sell - Pre registration`, `Delayed Sell`) |
-| `is_price_outlier` | Silver | Outside the 0.5th–99.5th percentile of price per sq ft within property type |
+| Column | Definition |
+|--------|------------|
+| `_source_file` | CSV file the row came from |
+| `_ingested_at` | When the row was loaded into Databricks |
+
+## Silver table: `workspace.dubai_re.silver_transactions`
+
+1,814,844 rows (every transaction, all groups) · 36 columns. Built by `databricks/02_silver_clean.ipynb`.
+
+| Column | Type | From bronze | Rule |
+|--------|------|-------------|------|
+| `transaction_id` | string | `transaction_id` | Unchanged; tested unique |
+| `transaction_date` | date | `instance_date` | `to_date(…, 'yyyy-MM-dd')` |
+| `transaction_month` | date | derived | First day of the month |
+| `is_valid_date` | boolean | derived | Year ≥ 1960 (4 rows false) |
+| `transaction_group` | string | `trans_group_en` | Sales / Mortgages / Gifts |
+| `procedure` | string | `procedure_name_en` | |
+| `is_core_sale` | boolean | derived | Procedure in Sell, Sell - Pre registration, Delayed Sell (1,314,686 rows) |
+| `registration_type` | string | `reg_type_en` | |
+| `is_off_plan` | boolean | derived | `registration_type = 'Off-Plan Properties'` |
+| `property_type` | string | `property_type_en` | Unit / Villa / Land / Building |
+| `property_sub_type` | string | `property_sub_type_en` | |
+| `property_usage` | string | `property_usage_en` | `أخرى` → `Other` |
+| `rooms_raw` | string | `rooms_en` | Kept for reference |
+| `bedrooms` | int | derived | Studio = 0, `n B/R` = n, otherwise NULL |
+| `has_parking` | boolean | `has_parking` | `'1'` → true |
+| `price_aed` | double | `actual_worth` | |
+| `area_sqm` | double | `procedure_area` | |
+| `area_sqft` | double | derived | `area_sqm × 10.7639` |
+| `price_per_sqm` | double | `meter_sale_price` | |
+| `price_per_sqft` | double | derived | `price_aed / area_sqft` when area > 0 |
+| `is_price_outlier` | boolean | derived | Core sales only: below the 0.5th or above the 99.5th percentile of price per sq ft within property type (about 13,100 rows). NULL for non-core rows |
+| `community` | string | derived | `master_project`, or `dld_area` if blank (373 communities in core sales) |
+| `master_project` | string | `master_project_en` | |
+| `dld_area` | string | `area_name_en` | |
+| `area_id` | int | `area_id` | |
+| `project` | string | `project_name_en` | |
+| `project_number` | int | `project_number` | `'1960.00'` → 1960 |
+| `building` | string | `building_name_en` | |
+| `nearest_metro`, `nearest_mall`, `nearest_landmark` | string | `nearest_*_en` | |
+| `parties_role_1`, `parties_role_2`, `parties_role_3` | int | `no_of_parties_role_*` | |
+| `_source_file`, `_ingested_at` | string, timestamp | bronze | Lineage |
+
+**Dropped in silver:** all 14 `_ar` columns, the five `*_id` codes that duplicate a text column (`procedure_id`, `trans_group_id`, `property_type_id`, `property_sub_type_id`, `reg_type_id`), `rent_value`, `meter_rent_price` and `load_timestamp`.
