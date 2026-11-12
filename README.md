@@ -64,8 +64,8 @@ Full profile: [`docs/data_profile.md`](docs/data_profile.md) · Column reference
 |--------|-----------------|--------|
 | 0 | Setup: Databricks Free Edition, schema, volume, upload, GitHub repo | ✅ |
 | 1 | **Bronze:** ingest raw CSVs into a Delta table | ✅ |
-| 2 | **Silver:** types, dates, outlier flags, standardised rooms and communities, sq ft, data quality gate | 🔄 |
-| 3 | **Gold:** star schema (fact sales, date, location and property dimensions) and aggregates | ⬜ |
+| 2 | **Silver:** types, dates, outlier flags, standardised rooms and communities, sq ft, data quality gate | ✅ |
+| 3 | **Gold:** star schema (fact sales, date, location and property dimensions), integrity tests, Q1/Q5 aggregates | 🔄 |
 | 4 | **Q1:** price hotspots in Spark SQL | ⬜ |
 | 5 | **Q2:** off-plan vs ready, statistical comparison in Python | ⬜ |
 | 6 | **Q5:** seasonality and 6-month forecast in Python, cross-checked in Excel | ⬜ |

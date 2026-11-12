@@ -108,6 +108,48 @@ One AED 50M penthouse moves an average a lot but barely moves the median. Price 
 
 ---
 
+## Module 3: Gold
+
+### Star schema, fact and dimension
+- **Fact:** events you measure (sales), holding measures plus keys. Long and narrow.
+- **Dimension:** descriptions you filter and group by (date, location, property). Short and wide.
+- **Star:** fact in the middle, each dimension joined directly to it. (A *snowflake* would chain dimensions to other dimensions, which Power BI handles less well.)
+**You already know:** a transactions sheet plus lookup sheets, with relationships instead of XLOOKUPs.
+**🎤 Interview answer:** *"I modelled the sales as a star schema: one fact table at the grain of one core sale, with date, location and property dimensions on integer surrogate keys. It's the shape Power BI's VertiPaq engine is built for: small dimensions to filter, one narrow fact to aggregate."*
+
+### Grain
+What one fact row represents. Mine: *one core sale registered from 2015 onwards*. State it first; mixing grains (e.g. sales and monthly targets in one table) is the classic modelling mistake.
+
+### Surrogate keys (and why hash them)
+One integer standing for a combination of descriptive columns. I used `xxhash64` over the NULL-safe, delimited values:
+- **Deterministic:** the same location gets the same key on every re-run.
+- **No lookup needed:** the fact computes its keys independently.
+- **NULL-safe:** Spark's hash skips NULLs, so I replace them with a marker first; otherwise `(A, NULL)` and `(NULL, A)` would collide.
+**🎤 Interview answer:** *"Power BI relationships need a single column, and integer joins are faster than multi-column text joins. I hashed the natural key so the keys are stable across re-runs, and handled NULLs explicitly to avoid collisions."*
+
+### Date dimension
+One row per calendar day, generated with `explode(sequence(start, end, INTERVAL 1 DAY))`. Needed for time intelligence (YoY, YTD), so that months with zero sales still appear, and to hold flags like `is_complete_month`.
+**🎤 Interview answer:** *"The date table gives a continuous calendar for time intelligence and lets me flag the partial last month once, so no chart or forecast ever compares five days with a full month."*
+
+### Parameterising
+Derive values from the data (`DATA_END = max(transaction_date)`) instead of hard-coding them. A new extract then updates everything automatically.
+
+### Referential integrity and anti joins
+Every fact key must exist in its dimension. `fact.join(dim, "key", "left_anti")` returns the orphans; the test expects zero.
+**You already know:** rows where XLOOKUP returns `#N/A`; in SQL, `WHERE NOT EXISTS`.
+**🎤 Interview answer:** *"My gold gate tests that every dimension key is unique and that the fact has no orphan keys, using anti joins. Orphans would fall into a Blank bucket in Power BI and silently disappear from filtered visuals."*
+
+### Conditional aggregation
+`SUM(CASE WHEN cond THEN 1 ELSE 0 END)` is COUNTIFS in SQL. `MEDIAN(CASE WHEN cond THEN x END)` gives a filtered median in the same query, because non-matching rows become NULL and are ignored.
+
+### Business categories defined once
+`segment` and `bedroom_band` live in `dim_property`, so SQL, Python, Excel and Power BI all use the same groups. `bedroom_sort` fixes Power BI's alphabetical sorting (**Sort by column**).
+
+### When `.toPandas()` is safe
+It moves every row onto one machine's memory: fine for a few thousand aggregated rows, never for the 1M-row fact. *"Aggregate in Spark, then move small results to pandas."*
+
+---
+
 ## PySpark ↔ pandas ↔ SQL cheat sheet (grows each module)
 
 | Task | PySpark | pandas | SQL |
@@ -135,3 +177,11 @@ One AED 50M penthouse moves an average a lot but barely moves the median. Price 
 | Join | `df.join(other, on="k", how="left")` | `df.merge(other, on="k", how="left")` | `LEFT JOIN … USING (k)` |
 | Filter | `df.filter("a > 5")` | `df[df.a > 5]` | `WHERE a > 5` |
 | Month start | `F.trunc("d", "month")` | `df.d.dt.to_period("M")` | `DATE_TRUNC('month', d)` |
+| Max value | `df.agg(F.max("d")).first()[0]` | `df.d.max()` | `SELECT MAX(d)` |
+| Distinct rows | `df.select(...).distinct()` | `df[[...]].drop_duplicates()` | `SELECT DISTINCT …` |
+| Hash key | `F.xxhash64(F.concat_ws("||", ...))` | `pd.util.hash_pandas_object(df)` | `xxhash64(…)` (Spark SQL) |
+| Rows with no match | `df.join(dim, "k", "left_anti")` | `df[~df.k.isin(dim.k)]` | `WHERE NOT EXISTS (…)` |
+| Generate dates | `explode(sequence(d1, d2, INTERVAL 1 DAY))` | `pd.date_range(d1, d2)` | `generate_series` (Postgres) |
+| Smallest of values | `F.least("a", F.lit(5))` | `np.minimum(df.a, 5)` | `LEAST(a, 5)` |
+| Spark → pandas | `df.toPandas()` (small data only) | — | — |
+| Create table from query | `spark.sql("CREATE OR REPLACE TABLE t AS SELECT …")` | — | `CREATE TABLE t AS SELECT …` |

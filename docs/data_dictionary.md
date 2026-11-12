@@ -103,3 +103,40 @@ This is based on the publisher's attribute sheet, corrected and extended with wh
 | `_source_file`, `_ingested_at` | string, timestamp | bronze | Lineage |
 
 **Dropped in silver:** all 14 `_ar` columns, the five `*_id` codes that duplicate a text column (`procedure_id`, `trans_group_id`, `property_type_id`, `property_sub_type_id`, `reg_type_id`), `rent_value`, `meter_rent_price` and `load_timestamp`.
+
+## Gold tables (star schema)
+
+Built by `databricks/03_gold_model.ipynb`. Scope: core sales, valid dates, from 1 January 2015.
+
+### `fact_sales`: one row per core sale (1,015,297 rows)
+
+| Column | Type | Definition |
+|--------|------|------------|
+| `transaction_id` | string | Unique sale ID |
+| `date_key` | int | `yyyyMMdd` → `dim_date` |
+| `location_key` | bigint | xxhash64(community, dld_area) → `dim_location` |
+| `property_key` | bigint | xxhash64(property_type, property_sub_type, property_usage, bedrooms) → `dim_property` |
+| `is_off_plan` | boolean | Off-plan registration |
+| `market` | string | `Off-plan` / `Ready` |
+| `price_aed`, `area_sqft`, `price_per_sqft` | double | Measures |
+| `is_price_outlier` | boolean | From silver |
+| `has_parking` | boolean | |
+| `project`, `building` | string | Drill-down detail |
+
+### `dim_date`: one row per day, 2015-01-01 to the end of the last data year (4,383 rows)
+`date_key`, `date`, `year`, `quarter`, `month`, `month_name`, `month_start`, `year_month`, `is_complete_month` (month ended on or before the last data date).
+
+### `dim_location`: one row per community × DLD area (341 rows)
+`location_key`, `community`, `dld_area`. One community can span several DLD areas (318 distinct communities).
+
+### `dim_property`: one row per property type × sub-type × usage × bedrooms (74 rows)
+`property_key`, `property_type`, `property_sub_type`, `property_usage`, `bedrooms`, plus:
+- `segment`: Apartment · Villa / Townhouse · Hotel apartment · Office · Retail · Land · Building · Other
+- `bedroom_band`: Studio · 1 BR … 4 BR · 5+ BR · N/A
+- `bedroom_sort`: 0–5, 99 for N/A (for sorting in Power BI)
+
+### Aggregates (also exported to `data/gold/*.csv`)
+| Table | Grain | Columns |
+|-------|-------|---------|
+| `agg_market_monthly` | Complete month (142 rows) | `month_start`, `sales`, `value_aed_bn`, `off_plan_sales`, `ready_sales`, `median_apartment_aed_sqft` (excl. outliers) |
+| `agg_price_community_yearly` | Year × community × segment × bedroom band, apartments and villas only, excl. outliers (~5,700 rows) | `year`, `is_full_year`, `community`, `segment`, `bedroom_band`, `bedroom_sort`, `sales`, `median_aed_sqft`, `median_price_aed`, `off_plan_pct` |
