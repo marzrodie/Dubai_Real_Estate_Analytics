@@ -65,9 +65,9 @@ Full profile: [`docs/data_profile.md`](docs/data_profile.md) · Column reference
 | 0 | Setup: Databricks Free Edition, schema, volume, upload, GitHub repo | ✅ |
 | 1 | **Bronze:** ingest raw CSVs into a Delta table | ✅ |
 | 2 | **Silver:** types, dates, outlier flags, standardised rooms and communities, sq ft, data quality gate | ✅ |
-| 3 | **Gold:** star schema (fact sales, date, location and property dimensions), integrity tests, Q1/Q5 aggregates | 🔄 |
-| 4 | **Q1:** price hotspots in Spark SQL | ⬜ |
-| 5 | **Q2:** off-plan vs ready, statistical comparison in Python | ⬜ |
+| 3 | **Gold:** star schema (fact sales, date, location and property dimensions), integrity tests, Q1/Q5 aggregates | ✅ |
+| 4 | **Q1:** price hotspots in Spark SQL: window functions, YoY, 2021–2025 CAGR, 2026 momentum, mix-shift check | ✅ |
+| 5 | **Q2:** off-plan vs ready in Python: like-for-like premium, Mann–Whitney + BH correction, bootstrap CIs, fixed-effects regression | 🔄 |
 | 6 | **Q5:** seasonality and 6-month forecast in Python, cross-checked in Excel | ⬜ |
 | 7 | Excel executive summary | ⬜ |
 | 8 | Power BI dashboard | ⬜ |
@@ -85,6 +85,9 @@ Dubai_Real_Estate_Analytics/
 ├── LEARNING.md                  # Concepts explained, interview answers
 ├── requirements.txt             # Python packages for the VS Code part
 ├── data/sample/                 # 1,000-row sample (full data: see "Reproduce")
+├── data/gold/                   # Small result tables (CSV) from Databricks and Python
+├── data/extracts/               # Row-level Parquet extracts (not in Git: recreate with databricks/05_*)
+├── images/                      # Charts used in this README
 ├── docs/                        # Data profile, data dictionary
 ├── modules/                     # Setup guide and module instructions
 ├── databricks/                  # Databricks notebooks (bronze, silver, gold, SQL)
@@ -100,7 +103,7 @@ Dubai_Real_Estate_Analytics/
 
 1. Download the Real Estate Transactions dataset from the Dubai Data portal: <https://data.dubai/en/l/470061>
 2. Follow [`modules/00_setup.md`](modules/00_setup.md) to create a Databricks Free Edition workspace and upload the CSVs.
-3. Run the notebooks in `databricks/` in number order, then the notebooks in `python/`.
+3. Run the notebooks in `databricks/` in number order, then the notebooks in `python/` (set-up: [`modules/05_vscode_setup.md`](modules/05_vscode_setup.md)).
 
 The raw CSVs (1.16 GB) are not stored in this repo. A 1,000-row random sample is in `data/sample/` for a quick look.
 

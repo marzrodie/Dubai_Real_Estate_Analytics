@@ -150,6 +150,89 @@ It moves every row onto one machine's memory: fine for a few thousand aggregated
 
 ---
 
+## Module 4: Q1 price hotspots (SQL window functions)
+
+### GROUP BY vs window functions
+`GROUP BY` collapses rows; a window function computes across related rows **and keeps every row**. `FUNCTION() OVER (PARTITION BY … ORDER BY …)`.
+**You already know:** `=IF(A3=A2, C3/C2-1, "")` in a sorted sheet. `PARTITION BY` is the "same group" test, `ORDER BY` is the sort, `LAG` is "the row above".
+**🎤 Interview answer:** *"GROUP BY returns one row per group; a window function adds a calculated column while keeping the detail rows, so I can compare each year with the previous one, or rank within a segment."*
+
+### ROW_NUMBER vs RANK vs DENSE_RANK
+With a tie for 2nd: `ROW_NUMBER` 1,2,3,4 · `RANK` 1,2,2,4 · `DENSE_RANK` 1,2,2,3.
+**🎤 Interview answer:** *"ROW_NUMBER when I need exactly one row per group, like the latest record; RANK for league tables where ties share a place; DENSE_RANK when I want the top N distinct values."*
+
+### The LAG gap trap
+`LAG` returns the previous **row**, not the previous **year**. If a year is missing, you silently compare across two years. Fix: `WHERE prev_year = year - 1`. (In my data, 285 rows would have been mislabelled.)
+
+### QUALIFY
+Filters on a window function's result (`HAVING` is for aggregates, `QUALIFY` is for windows). Window functions can't go in `WHERE`, because `WHERE` runs before they're calculated. Supported in Databricks, Snowflake and BigQuery; in PostgreSQL, use a sub-query or CTE.
+
+### WINDOW clause and CTEs
+`WINDOW w AS (PARTITION BY … ORDER BY …)` names a window once for several functions. A CTE (`WITH x AS (…)`) names a sub-query so the logic reads top to bottom.
+
+### Minimum-sample rule
+55% of 2025 groups had fewer than 50 sales, but together they were under 3% of sales. Requiring 50+ sales in both years removes noise while keeping almost the whole market.
+**🎤 Interview answer:** *"Before ranking, I checked how many sales sat behind each median. I set a 50-sale minimum, which removed half the groups but under 3% of sales. It's a documented judgement call, parameterised so I can test its sensitivity."*
+
+### Pivot with conditional aggregation
+`MAX(CASE WHEN year = 2021 THEN x END)` puts each year's value in its own column: a PivotTable in SQL.
+
+### CAGR
+`(end / start) ^ (1 / years) − 1`. A 60% rise over 4 years is about 12.5% a year (compounding), not 15%.
+
+### Like-for-like comparison
+Compare the same months in both years (Jan–Oct 2026 vs Jan–Oct 2025), never a partial year against a full one, so season and length don't distort the change.
+
+### Mix (composition) effect
+A median can jump because *different* homes sold, not because homes gained value. In Dubai the main driver is off-plan vs ready share. Motor City 2-bed apartments showed +97% in 2025, but the off-plan share went from about 25% to 65%, and ready-only prices rose about 27%.
+**🎤 Interview answer:** *"My top riser nearly doubled, which made me suspicious. Splitting by off-plan vs ready showed most of it was a change in mix, not appreciation. I flagged groups whose off-plan share moved 25+ points and reported the ranking with and without them. The proper fix would be a repeat-sales index, which needs a unit ID this dataset doesn't have."*
+
+### Market breadth
+The share of groups rising, and the median change across groups. It shows whether a rise is widespread or driven by a few hotspots.
+
+---
+
+## Module 5: Q2 off-plan vs ready (Python statistics)
+
+### Three questions: is it real, how big, how sure?
+Hypothesis test → p-value; effect size; confidence interval. With hundreds of thousands of rows nearly everything is "significant", so effect size and interval matter most.
+**🎤 Interview answer:** *"Significance only tells me a difference probably isn't chance. With 580k sales nearly everything is significant, so I report the size of the effect and its confidence interval, because that's what a business decision depends on."*
+
+### p-value
+The probability of seeing a difference at least this large **if the null hypothesis were true**. It is *not* the probability the null is true, and says nothing about size.
+
+### Mann–Whitney U vs t-test
+A t-test compares means and assumes roughly normal data. Mann–Whitney compares ranks: no normality assumption, robust to extreme values, and consistent with median-based reporting. Prices per sq ft are right-skewed (2025 apartments: mean ~1,900 vs median ~1,730).
+**🎤 Interview answer:** *"Prices are skewed and I report medians, so I used Mann–Whitney, a rank-based test that doesn't assume normality or get pulled around by extreme sales."*
+
+### Effect size: common-language effect size (CLES)
+`U / (n₁ × n₂)`: the probability that a random off-plan sale is priced above a random ready one (50% = no difference). JVC 1-bed 2025: about 72%.
+
+### Confounding
+A third variable that affects both the "treatment" (off-plan or ready) and the outcome (price). Here, location: off-plan volume sits in cheaper communities. Fix: compare within matched groups (community × bedrooms × year), or control for the variable in a regression.
+
+### Simpson's paradox
+A trend that reverses when you aggregate. Naive off-plan premium: about 56% → 24% (2021 → 2026). Like-for-like: about 19% → 32%. Both are "true"; only one answers the question.
+**🎤 Interview answer:** *"The naive premium halved, which looked like buyers were cooling on off-plan. But off-plan volume had shifted to cheaper communities. Comparing within the same community and unit type, the premium actually rose from about 19% to 32%. Reporting the naive number would have given the wrong headline."*
+
+### Weighted median
+The value where cumulative weight reaches half the total. It summarises per-group results the way the *typical buyer* experiences them, not the typical group.
+
+### Multiple comparisons and Benjamini–Hochberg
+Run 120 tests at 5% and you expect about 6 false positives even if nothing is real. BH controls the **false discovery rate** (the share of "significant" results that are false alarms); Bonferroni (0.05 ÷ tests) is stricter and loses more real findings.
+
+### Bootstrap confidence interval
+Resample your data with replacement thousands of times, recompute the statistic each time, and take the middle 95%. It needs no formula, so it works for medians and weighted medians. Resample **the unit you generalise over**: sales within one group; groups for the market-wide premium (a cluster bootstrap). Set a **seed** for reproducibility.
+**🎤 Interview answer (for a non-technical manager):** *"I re-ran the calculation 2,000 times on slightly different random versions of the data. 95% of the answers fell between 20% and 45%, so that's the range we can be fairly confident about."*
+
+### Fixed-effects regression with cluster-robust errors
+`log(price) ~ off_plan + C(group)`: one intercept per group means β only compares within groups; `exp(β) − 1` is the premium. Cluster-robust standard errors account for sales in the same group not being independent. Result: about 33% (CI 28–38%), agreeing with the weighted median of about 30%.
+
+### Virtual environments and reproducibility
+`.venv` + `requirements.txt` + a fixed random seed + data recreated from documented code = anyone can rerun the analysis and get the same numbers.
+
+---
+
 ## PySpark ↔ pandas ↔ SQL cheat sheet (grows each module)
 
 | Task | PySpark | pandas | SQL |
@@ -185,3 +268,16 @@ It moves every row onto one machine's memory: fine for a few thousand aggregated
 | Smallest of values | `F.least("a", F.lit(5))` | `np.minimum(df.a, 5)` | `LEAST(a, 5)` |
 | Spark → pandas | `df.toPandas()` (small data only) | — | — |
 | Create table from query | `spark.sql("CREATE OR REPLACE TABLE t AS SELECT …")` | — | `CREATE TABLE t AS SELECT …` |
+| Previous row in group | `F.lag("x").over(Window.partitionBy("g").orderBy("yr"))` | `df.groupby("g").x.shift(1)` | `LAG(x) OVER (PARTITION BY g ORDER BY yr)` |
+| Rank in group | `F.rank().over(w)` | `df.groupby("g").x.rank(method="min", ascending=False)` | `RANK() OVER (PARTITION BY g ORDER BY x DESC)` |
+| Share of total | `F.col("x") / F.sum("x").over(Window.partitionBy())` | `df.x / df.x.sum()` | `x / SUM(x) OVER ()` |
+| Filter on a window | `.filter(F.col("rk") <= 10)` after `withColumn` | `df[df.rk <= 10]` | `QUALIFY rk <= 10` |
+| Pivot years to columns | `df.groupBy("g").pivot("yr").agg(F.max("x"))` | `df.pivot_table(index="g", columns="yr", values="x")` | `MAX(CASE WHEN yr = 2021 THEN x END)` |
+| Power | `F.pow("a", 0.25)` | `df.a ** 0.25` | `POWER(a, 0.25)` |
+| Count matching rows | `F.count_if(cond)` / `F.sum(cond.cast("int"))` | `(cond).sum()` | `COUNT_IF(cond)` |
+| Read Parquet | `spark.read.parquet(path)` | `pd.read_parquet(path)` | — |
+| Named aggregations | `.agg(F.median("x").alias("median"), F.count("*").alias("n"))` | `.agg(median="median", n="size")` | `MEDIAN(x) AS median, COUNT(*) AS n` |
+| Long → wide | `.groupBy(...).pivot("market")` | `.unstack("market")` | `MAX(CASE WHEN market = … END)` |
+| Proportion of True | `F.avg(cond.cast("int"))` | `(df.a == "x").mean()` | `AVG(CASE WHEN … THEN 1.0 ELSE 0 END)` |
+| Map values from a lookup | `df.join(lookup, "k")` | `df.k.map(series)` | `JOIN … ON` |
+| Loop over groups | — | `for key, g in df.groupby("k"):` | — |

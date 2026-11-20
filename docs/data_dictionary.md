@@ -140,3 +140,27 @@ Built by `databricks/03_gold_model.ipynb`. Scope: core sales, valid dates, from 
 |-------|-------|---------|
 | `agg_market_monthly` | Complete month (142 rows) | `month_start`, `sales`, `value_aed_bn`, `off_plan_sales`, `ready_sales`, `median_apartment_aed_sqft` (excl. outliers) |
 | `agg_price_community_yearly` | Year × community × segment × bedroom band, apartments and villas only, excl. outliers (~5,700 rows) | `year`, `is_full_year`, `community`, `segment`, `bedroom_band`, `bedroom_sort`, `sales`, `median_aed_sqft`, `median_price_aed`, `off_plan_pct` |
+
+## Q1 results tables (Module 4)
+
+Built by `databricks/04_q1_price_hotspots.ipynb` from `agg_price_community_yearly` and the star schema. Apartments and villas/townhouses, outliers excluded, minimum 50 sales in each compared period. Exported to `data/gold/*.csv`.
+
+| Table | Grain | Key columns |
+|-------|-------|-------------|
+| `q1_yoy` | Year × community × segment × bedroom band, consecutive years only | `prev_median_aed_sqft`, `median_aed_sqft`, `yoy_pct`, `prev_sales`, `sales`, `prev_off_plan_pct`, `off_plan_pct`, `mix_shift_pts`, `is_mix_shift` (off-plan share moved by 25+ points) |
+| `q1_growth_2021_2025` | Community × segment × bedroom band | `median_2021`, `median_2025`, `sales_2021`, `sales_2025`, `total_growth_pct`, `cagr_pct` |
+| `q1_momentum_2026` | Community × segment × bedroom band | Jan to last complete month, 2025 vs 2026: `sales_ytd_2025/2026`, `median_ytd_2025/2026`, `ytd_change_pct`, `yoy_2025_pct`, `trend` (Still rising / Turning down / Recovering / Still falling; NULL if not in `q1_yoy`) |
+
+## Q2 extract and results (Module 5)
+
+**Extract:** `data/extracts/q2_apartments.parquet`, built by `databricks/05_export_q2_extract.ipynb`. Apartment core sales, 2021 to the last complete month, outliers excluded (582,612 rows). Not in Git.
+Columns: `transaction_id`, `month_start`, `year`, `community`, `bedroom_band`, `bedroom_sort`, `market`, `price_aed`, `area_sqft`, `price_per_sqft`.
+
+**Results** (`data/gold/`, written by `python/05_q2_offplan_vs_ready.ipynb`):
+
+| File | Grain | Key columns |
+|------|-------|-------------|
+| `q2_off_plan_share.csv` | Year | `off_plan_share_pct` |
+| `q2_premium_by_group.csv` | Year × community × bedroom band with 30+ off-plan **and** 30+ ready sales | `median_off_plan`, `median_ready`, `n_off_plan`, `n_ready`, `premium_pct`, `weight` |
+| `q2_premium_by_year.csv` | Year | `groups`, `sales_covered`, `coverage_pct`, `like_for_like_premium_pct` (sales-weighted median), `ci_low`, `ci_high` (95% cluster bootstrap), `naive_premium_pct` |
+| `q2_tests_2025.csv` | 2025 groups | Group columns plus `p_value` (Mann–Whitney U), `p_adjusted` (Benjamini–Hochberg), `significant` |
